@@ -1,72 +1,99 @@
 import tensorflow as tf
-import numpy as np
-from tensorflow.contrib.lookup import index_table_from_file
+import functools
+from pathlib import Path
+from tf_metrics import precision, recall, f1
 
 
-class BiLSTMCRF(object):
-    def __init__(self, inp, labels, training, params):
-        self.params = params  # 保存参数
-        self.training = training
-        self.num_tags = len(params['tags'])
+class Model(object):
+    def __init__(self, config, network):
+        self.config = config
+        self.network = network
+        cfg = tf.estimator.RunConfig(save_checkpoints_steps=self.config['train']['save_checkpoints_steps'])  # 用于指定estimator运行的参数
+        self.estimator = tf.estimator.Estimator(self.model_fn, self.config['train']['model_dir'], cfg, self.config['model'])
 
-        words, nwords = inp
-        vocab_words = index_table_from_file(params['vocab'],
-                                            num_oov_buckets=params['num_oov_buckets'])  # 从文件中构造词表与id的映射
-        # 将词转换为id，对于袋外词会转换为当前最大id加1. 如词表中最大的id为10,那么所有袋外词的id均为11
-        word_ids = vocab_words.lookup(words)
+    def input_fn(self, texts, labels, params=None, shuffle_and_repeat=False):
+        def generator_fn():
+            for text, label in zip(texts, labels):
+                assert len(text) == len(label)
+                # 按estimator的约定，返回包含两个元素的元组， 第一个作为features，第二个作为labels
+                yield (text, len(text)), label
+        params = params if params is not None else {}
+        # None表示不确定,()表示只有1个数
+        # shape分别对应generator_fn返回数据的形状
+        shapes = (([None], ()), [None])
+        types = ((tf.string, tf.int32), tf.string)
+        defaults = (('<pad>', 0), 'O')
 
-        with tf.variable_scope("embedding"):
-            if params['use_pretrained']:  # 是否使用预训练词向量
-                glove = np.load(params['embed'])
-                glove = np.vstack([glove, [[0.] * params['dim']]])  # 将全0向量拼接到glove矩阵的最下边，作为袋外词的向量
-                W = tf.Variable(glove, dtype=tf.float32, trainable=True)
-            else:
-                W = tf.Variable(tf.random_uniform([params['vocab_size'], params['dim']], -1.0, 1.0),
-                                name='W',
-                                trainable=True)
-            embeddings = tf.nn.embedding_lookup(W, word_ids)
-            # (batch_size,seq_len,embedding_dim)
-            encoder_input = tf.layers.dropout(embeddings, rate=params['dropout'], training=training)
+        dataset = tf.data.Dataset.from_generator(functools.partial(generator_fn),
+                                                 output_shapes=shapes,
+                                                 output_types=types)
+        if shuffle_and_repeat:
+            dataset = dataset.shuffle(params['buffer_size']).repeat(params['epochs'])
 
-        encoder_outputs = [encoder_input]  # 保存多层LSTM的输出结果
-        for i in range(params['lstm_layers']):
-            with tf.variable_scope("BiLSTM"+str(i)):
-                encoder_output = self.BiLSTM(encoder_outputs[-1], nwords)
-                encoder_outputs.append(encoder_output)
+        # 进行padding，其中padding的长度由shape来指定(为None是按最长文本进行padding)，padding的值由defaults指定
+        # padded_batch是对batch进行padding，因此每个batch最终的长度可能不一致
+        dataset = (dataset.padded_batch(params.get('batch_size', 32), shapes, defaults).prefetch(1))
+        return dataset
 
-        with tf.variable_scope("CRF"):
-            logits, self.pred_ids, crf_params = self.CRF(encoder_outputs[-1], self.num_tags, nwords)
+    def model_fn(self, features, labels, mode, params):
+        # 在estimator中，由dataset产生的数据是一个包含两个元素的元组，
+        # 其中第一个元素指定为features，第二个元素指定为labels
+        training = (mode == tf.estimator.ModeKeys.TRAIN)
+        net = self.network(features, labels, training, params)
+        if mode == tf.estimator.ModeKeys.PREDICT:
+            predictions = {'pred_ids': net.pred_ids,
+                           'tags': net.pred_strings}
+            return tf.estimator.EstimatorSpec(mode, predictions=predictions)
+        else:
+            metrics = {
+                'acc': tf.metrics.accuracy(net.tags, net.pred_ids, net.weights),
+                # [0,1,2,3,4,5]对应'B-LOC', 'I-LOC', 'B-PER', 'I-PER', 'B-ORG', 'I-ORG'
+                'precision': precision(net.tags, net.pred_ids, net.num_tags, [0, 1, 2, 3, 4, 5], net.weights),
+                'recall': recall(net.tags, net.pred_ids, net.num_tags, [0, 1, 2, 3, 4, 5], net.weights),
+                'f1': f1(net.tags, net.pred_ids, net.num_tags, [0, 1, 2, 3, 4, 5], net.weights),
+            }
+            for metric_name, op in metrics.items():
+                tf.summary.scalar(metric_name, op[1])
 
-        with tf.variable_scope("loss"):
-            vocab_tags = tf.contrib.lookup.index_table_from_tensor(params['tags'])  # tags的词表
-            self.tags = vocab_tags.lookup(labels)  # 将tags转换为对应的id
-            log_likelihood, _ = tf.contrib.crf.crf_log_likelihood(
-                logits, self.tags, nwords, crf_params)
-            self.loss = tf.reduce_mean(-log_likelihood)
-            self.weights = tf.sequence_mask(nwords)
-            reverse_vocab_tags = tf.contrib.lookup.index_to_string_table_from_tensor(params['tags'])  # 反向词表
-            self.pred_strings = reverse_vocab_tags.lookup(tf.to_int64(self.pred_ids))  # 将预测的id转换为对应的tag
-            self.train_op = tf.train.AdamOptimizer().minimize(
-                self.loss, global_step=tf.train.get_or_create_global_step())
+            if mode == tf.estimator.ModeKeys.EVAL:
+                return tf.estimator.EstimatorSpec(
+                    mode, loss=net.loss, eval_metric_ops=metrics)
 
-    def BiLSTM(self, inputs, seq_length):
-        t = tf.transpose(inputs, perm=[1, 0, 2])  # (seq_len,batch_size,embedding_dim)
-        lstm_cell_fw = tf.contrib.rnn.LSTMBlockFusedCell(self.params['lstm_size'])
-        lstm_cell_bw = tf.contrib.rnn.LSTMBlockFusedCell(self.params['lstm_size'])
-        lstm_cell_bw = tf.contrib.rnn.TimeReversedFusedRNN(lstm_cell_bw)
-        # (seq_len,batch_size,lstm_size)
-        output_fw, _ = lstm_cell_fw(t, dtype=tf.float32, sequence_length=seq_length)
-        output_bw, _ = lstm_cell_bw(t, dtype=tf.float32, sequence_length=seq_length)
-        # (seq_len,batch_size,lstm_size*2)
-        output = tf.concat([output_fw, output_bw], axis=-1)
-        # (batch_size,seq_len,lstm_size*2)
-        output = tf.transpose(output, perm=[1, 0, 2])
-        output = tf.layers.dropout(output, rate=self.params['dropout'], training=self.training)
-        return output
+            elif mode == tf.estimator.ModeKeys.TRAIN:
+                train_op = tf.train.AdamOptimizer().minimize(
+                    net.loss, global_step=tf.train.get_or_create_global_step())
+                return tf.estimator.EstimatorSpec(mode, loss=net.loss, train_op=train_op)
 
-    def CRF(self, inputs, num_tags, seq_length):
-        logits = tf.layers.dense(inputs, num_tags)
-        crf_params = tf.get_variable("crf", [num_tags, num_tags], dtype=tf.float32)
-        # (batch_size,seq_len)
-        pred_ids, _ = tf.contrib.crf.crf_decode(logits, crf_params, seq_length)
-        return logits, pred_ids, crf_params
+    def train(self, texts, labels):
+        inpf = functools.partial(self.input_fn, texts, labels, self.config['train'], shuffle_and_repeat=True)
+        Path(self.estimator.eval_dir()).mkdir(parents=True, exist_ok=True)
+        self.estimator.train(input_fn=inpf)
+
+    def eval(self, texts, labels):
+        inpf = functools.partial(self.input_fn, texts, labels)
+        self.estimator.evaluate(input_fn=inpf)
+
+    def train_and_eval(self, tr_texts, tr_labels, dev_texts, dev_labels):
+        train_inpf = functools.partial(self.input_fn, tr_texts, tr_labels, self.config['train'], shuffle_and_repeat=True)
+        eval_inpf = functools.partial(self.input_fn, dev_texts, dev_labels)
+        train_spec = tf.estimator.TrainSpec(input_fn=train_inpf)
+        eval_spec = tf.estimator.EvalSpec(input_fn=eval_inpf, throttle_secs=60)
+        tf.estimator.train_and_evaluate(self.estimator, train_spec, eval_spec)
+
+    def predict(self, texts, labels=None):
+        # 尽管预测时不需要标签，但是由于input_fn需要labels，因此如果labels为None，那么就生成一个labels
+        if not labels:
+            labels = []
+            for text in texts:
+                labels.append(['O']*len(text))
+        inpf = functools.partial(self.input_fn, texts, labels)
+        preds = self.estimator.predict(inpf)
+        results = []
+        for pred in preds:
+            results.append(pred['tags'])
+        return results
+
+
+
+
+
