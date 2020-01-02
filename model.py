@@ -42,7 +42,8 @@ class Model(object):
         net = self.network(features, labels, training, params)
         if mode == tf.estimator.ModeKeys.PREDICT:
             predictions = {'pred_ids': net.pred_ids,
-                           'tags': net.pred_strings}
+                           'tags': net.pred_strings,
+                           'score': net.score}
             return tf.estimator.EstimatorSpec(mode, predictions=predictions)
         else:
             metrics = {
@@ -80,18 +81,29 @@ class Model(object):
         eval_spec = tf.estimator.EvalSpec(input_fn=eval_inpf, throttle_secs=60)
         tf.estimator.train_and_evaluate(self.estimator, train_spec, eval_spec)
 
-    def predict(self, texts, labels=None):
+    def _predict(self, texts, labels=None):
         # 尽管预测时不需要标签，但是由于input_fn需要labels，因此如果labels为None，那么就生成一个labels
         if not labels:
             labels = []
             for text in texts:
-                labels.append(['O']*len(text))
+                labels.append(['O'] * len(text))
         inpf = functools.partial(self.input_fn, texts, labels)
         preds = self.estimator.predict(inpf)
-        results = []
-        for pred in preds:
-            results.append(pred['tags'])
-        return results
+        preds = [pred for pred in preds]
+        return preds
+
+    def predict_tags(self, texts, labels=None):
+        preds = self._predict(texts, labels)
+        tags = [pred['tags'] for pred in preds]
+        return tags
+
+    def predict_viterbi_score(self, texts, labels=None):
+        preds = self._predict(texts, labels)
+        scores = [pred['score'] for pred in preds]
+        return scores
+
+    def predict_logits(self, texts, labels=None):
+        pass
 
 
 

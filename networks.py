@@ -35,7 +35,7 @@ class BiLSTMCRF(object):
                 encoder_outputs.append(encoder_output)
 
         with tf.variable_scope("CRF"):
-            logits, self.pred_ids, crf_params = self.CRF(encoder_outputs[-1], self.num_tags, nwords)
+            logits, self.pred_ids, crf_params, self.score = self.CRF(encoder_outputs[-1], self.num_tags, nwords)
 
         reverse_vocab_tags = tf.contrib.lookup.index_to_string_table_from_tensor(params['tags'])  # 反向词表
         self.pred_strings = reverse_vocab_tags.lookup(tf.to_int64(self.pred_ids))  # 将预测的id转换为对应的tag
@@ -70,5 +70,5 @@ class BiLSTMCRF(object):
         logits = tf.layers.dense(inputs, num_tags)
         crf_params = tf.get_variable("crf", [num_tags, num_tags], dtype=tf.float32)
         # (batch_size,seq_len)
-        pred_ids, _ = tf.contrib.crf.crf_decode(logits, crf_params, seq_length)
-        return logits, pred_ids, crf_params
+        pred_ids, score = tf.contrib.crf.crf_decode(logits, crf_params, seq_length)
+        return logits, pred_ids, crf_params, score
