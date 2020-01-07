@@ -38,8 +38,8 @@ class Model(object):
     def model_fn(self, features, labels, mode, params):
         # 在estimator中，由dataset产生的数据是一个包含两个元素的元组，
         # 其中第一个元素指定为features，第二个元素指定为labels
-        training = (mode == tf.estimator.ModeKeys.TRAIN)
-        net = self.network(features, labels, training, params)
+        # training = (mode == tf.estimator.ModeKeys.TRAIN)
+        net = self.network(features, labels, mode, params)
         if mode == tf.estimator.ModeKeys.PREDICT:
             predictions = {'pred_ids': net.pred_ids,
                            'tags': net.pred_strings,

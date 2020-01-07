@@ -24,6 +24,26 @@ def load_data(file):
     return {'texts': texts, 'labels': labels}
 
 
+def save_data(texts, labels, file, word_sep=' ', line_sep='\r\n', line_break='\r\n'):
+    """
+    :param texts:
+    :param labels:
+    :param file:
+    :param word_sep: 字(词)与其标签之间的分隔符；
+    :param line_sep: 在model为'ernie'时，对应文本和标签的分隔符；
+    :param line_break: 不同文本间的分隔符；
+    """
+    assert len(texts) == len(labels)
+    save_list = []
+    for text, label in zip(texts, labels):
+        for t, l in zip(text, label):
+            save_list.append(word_sep.join([t, l]) + line_sep)
+        save_list.append(line_break)
+    with codecs.open(file, 'w', encoding='utf-8') as f:
+        for l in save_list:
+            f.write(l)
+
+
 def load_all_texts(files):
     """
     将多个文件中的文本合并在一起

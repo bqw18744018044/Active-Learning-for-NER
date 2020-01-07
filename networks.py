@@ -4,9 +4,10 @@ from tensorflow.contrib.lookup import index_table_from_file
 
 
 class BiLSTMCRF(object):
-    def __init__(self, inp, labels, training, params):
+    def __init__(self, inp, labels, mode, params):
         self.params = params  # 保存参数
-        self.training = training
+        self.mode = mode
+        self.training = (mode == tf.estimator.ModeKeys.TRAIN)
         self.num_tags = len(params['tags'])
 
         words, nwords = inp
@@ -26,7 +27,7 @@ class BiLSTMCRF(object):
                                 trainable=True)
             embeddings = tf.nn.embedding_lookup(W, word_ids)
             # (batch_size,seq_len,embedding_dim)
-            encoder_input = tf.layers.dropout(embeddings, rate=params['dropout'], training=training)
+            encoder_input = tf.layers.dropout(embeddings, rate=params['dropout'], training=self.training)
 
         encoder_outputs = [encoder_input]  # 保存多层LSTM的输出结果
         for i in range(params['lstm_layers']):
@@ -41,7 +42,7 @@ class BiLSTMCRF(object):
         self.pred_strings = reverse_vocab_tags.lookup(tf.to_int64(self.pred_ids))  # 将预测的id转换为对应的tag
 
         with tf.variable_scope("loss"):
-            if training:
+            if self.mode != tf.estimator.ModeKeys.PREDICT:
                 vocab_tags = tf.contrib.lookup.index_table_from_tensor(params['tags'])  # tags的词表
                 self.tags = vocab_tags.lookup(labels)  # 将tags转换为对应的id
                 log_likelihood, _ = tf.contrib.crf.crf_log_likelihood(
