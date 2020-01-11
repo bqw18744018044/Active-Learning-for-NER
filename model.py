@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 import functools
 from pathlib import Path
 from tf_metrics import precision, recall, f1
@@ -41,7 +42,8 @@ class Model(object):
         # training = (mode == tf.estimator.ModeKeys.TRAIN)
         net = self.network(features, labels, mode, params)
         if mode == tf.estimator.ModeKeys.PREDICT:
-            predictions = {'pred_ids': net.pred_ids,
+            predictions = {'probs': net.probs,
+                           'pred_ids': net.pred_ids,
                            'tags': net.pred_strings,
                            'score': net.score}
             return tf.estimator.EstimatorSpec(mode, predictions=predictions)
@@ -102,8 +104,10 @@ class Model(object):
         scores = [pred['score'] for pred in preds]
         return scores
 
-    def predict_logits(self, texts, labels=None):
-        pass
+    def predict_probs(self, texts, labels=None):
+        preds = self._predict(texts, labels)
+        probs = [pred['probs'] for pred in preds]
+        return probs
 
 
 

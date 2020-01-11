@@ -38,6 +38,7 @@ class BiLSTMCRF(object):
         with tf.variable_scope("CRF"):
             logits, self.pred_ids, crf_params, self.score = self.CRF(encoder_outputs[-1], self.num_tags, nwords)
 
+        self.probs = tf.nn.softmax(logits, axis=-1)
         reverse_vocab_tags = tf.contrib.lookup.index_to_string_table_from_tensor(params['tags'])  # 反向词表
         self.pred_strings = reverse_vocab_tags.lookup(tf.to_int64(self.pred_ids))  # 将预测的id转换为对应的tag
 

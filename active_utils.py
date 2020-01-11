@@ -57,12 +57,6 @@ class ActiveStrategy(object):
             return self.random_sampling
 
     @classmethod
-    def least_confidence(cls, viterbi_scores):
-        scores = np.array(viterbi_scores)
-        tobe_selected_idxs = np.argsort(scores)[:int(len(scores)/3)]
-        return tobe_selected_idxs
-
-    @classmethod
     def random_sampling(cls, texts, num):
         idxs = list(range(len(texts)))
         if num > len(texts):
@@ -70,10 +64,49 @@ class ActiveStrategy(object):
         return random.sample(idxs, num)
 
     @classmethod
-    def mnlp(cls, viterbi_scores, texts, select_num):
+    def lc_sampling(cls, viterbi_scores, texts, select_num):
+        """
+        Least Confidence
+        """
+        select_num = select_num if len(texts) >= select_num else len(texts)
+        scores = np.array(viterbi_scores)
+        tobe_selected_idxs = np.argsort(scores)[:select_num]
+        tobe_selected_scores = scores[tobe_selected_idxs]
+        return tobe_selected_idxs, tobe_selected_scores
+
+    @classmethod
+    def mnlp_sampling(cls, viterbi_scores, texts, select_num):
         select_num = select_num if len(texts) >= select_num else len(texts)
         seq_lens = np.array([len(text) for text in texts])
         scores = np.array(viterbi_scores)/seq_lens
         tobe_selected_idxs = np.argsort(scores)[:select_num]
         tobe_selected_scores = scores[tobe_selected_idxs]
+        return tobe_selected_idxs, tobe_selected_scores
+
+    @classmethod
+    def total_token_entropy(cls, prob):
+        epsilon = 1e-9
+        prob += epsilon
+        tte = np.einsum('ij->', -np.log(prob) * prob)
+        return tte
+
+    @classmethod
+    def tte_sampling(cls, probs, texts, select_num):
+        """
+        Total token entropy sampling.
+        """
+        select_num = select_num if len(texts) >= select_num else len(texts)
+        tte_scores = np.array([cls.total_token_entropy(prob[:len(text), :])
+                               for prob, text in zip(probs, texts)])
+        tobe_selected_idxs = np.argsort(tte_scores)[-select_num:]
+        tobe_selected_scores = tte_scores[tobe_selected_idxs]
+        return tobe_selected_idxs, tobe_selected_scores
+
+    @classmethod
+    def te_sampling(cls, probs, texts, select_num):
+        select_num = select_num if len(texts) >= select_num else len(texts)
+        te_scores = np.array([cls.total_token_entropy(prob[:len(text), :])/len(text)
+                              for prob, text in zip(probs, texts)])
+        tobe_selected_idxs = np.argsort(te_scores)[-select_num:]
+        tobe_selected_scores = te_scores[tobe_selected_idxs]
         return tobe_selected_idxs, tobe_selected_scores
