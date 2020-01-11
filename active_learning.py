@@ -86,6 +86,6 @@ else:
                                                                                   active_config['incremental_num'])
         dataPool.update(tobe_selected_idxs)
 
-# save_data(selected_texts, selected_labels, './data/selected_train.txt')
+save_data(selected_texts, selected_labels, './data/selected_train.txt')
 
 
