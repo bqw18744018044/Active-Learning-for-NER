@@ -2,7 +2,7 @@ import logging
 import enum
 from utils import load_data, save_data
 from model import Model
-from networks import BiLSTMCRF
+from networks import BiLstmCrf
 from active_utils import DataPool, ActiveStrategy
 
 # 枚举主动学习策略
@@ -46,7 +46,7 @@ dev = load_data(data_config['dev'])
 logger.info("The size of train is {}".format(len(train['texts'])))
 logger.info("The size of dev is {}".format(len(dev['texts'])))
 dataPool = DataPool(train['texts'], train['labels'], active_config['initial_num'])
-model = Model(config, BiLSTMCRF)
+model = Model(config, BiLstmCrf)
 selected_texts = None
 selected_labels = None
 
@@ -87,5 +87,3 @@ else:
         dataPool.update(tobe_selected_idxs)
 
 save_data(selected_texts, selected_labels, './data/selected_train.txt')
-
-
