@@ -41,7 +41,7 @@ def start(train, dev, model_config, active_config, network):
             if len(selected_texts) != 0:
                 model.train(selected_texts, selected_labels)
             if active_config.select_strategy == STRATEGY.LC:
-                scores = model.predict_viterbi_scores(unselected_texts)
+                scores = model.predict_viterbi_score(unselected_texts)
                 tobe_selected_idxs, tobe_selected_scores = ActiveStrategy.lc_sampling(scores, unselected_texts,
                                                                                       active_config.select_num)
             elif active_config.select_strategy == STRATEGY.MNLP:
@@ -78,7 +78,7 @@ if __name__ == '__main__':
     active_config.select_strategy = STRATEGY.RAND
     model_config = ModelConfig()
     model_config.epochs = 20
-    for i in np.arange(0.2, 0.9, 0.2):
+    for i in np.arange(1.0, 1.1, 0.2):
         i = round(i, 1)
         active_config.total_percent = i
         active_config.update()

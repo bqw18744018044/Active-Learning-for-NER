@@ -69,7 +69,7 @@ class ActiveStrategy(object):
         Least Confidence
         """
         select_num = select_num if len(texts) >= select_num else len(texts)
-        seq_lens = np.array([len(text.split()) for text in texts])
+        seq_lens = np.array([len(text) for text in texts])
         scores = np.array(viterbi_scores)
         scores = scores/seq_lens
         tobe_selected_idxs = np.argsort(scores)[:select_num]

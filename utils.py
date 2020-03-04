@@ -81,8 +81,7 @@ def build_matrix(embeddings_index, word_index):
             embedding_vector = embeddings_index[word]
         except:
             # word不存在则使用unknown的vector
-            embedding_vector = embeddings_index["未知"]
-            # embedding_vector = embeddings_index["unknown"]
+            embedding_vector = embeddings_index['unknown'] if 'unknown' in embeddings_index else embeddings_index['未知']
         if embedding_vector is not None:
             # 保证embedding_matrix行的向量与word_index中序号一致
             embedding_matrix[i] = embedding_vector
