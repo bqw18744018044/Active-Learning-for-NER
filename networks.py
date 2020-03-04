@@ -3,7 +3,25 @@ import numpy as np
 from tensorflow.contrib.lookup import index_table_from_file
 
 
-class BiLstmCrf(object):
+class BaseNetwork(object):
+    def __init__(self, inp, labels, mode, params):
+        self.inp = inp
+        self.labels = labels
+        self.params = params
+        self.mode = mode
+        self.logits = None
+        self.pred_ids = None
+        self.pred_strings = None
+        self.probs = None
+        self.score = None
+        self.mnlp_score = None
+        self.tags = None
+        self.num_tags = None
+        self.weights = None
+        self.loss = None
+
+
+class BiLstmCrf(BaseNetwork):
     def __init__(self, inp, labels, mode, params):
         self.inp = inp
         self.labels = labels

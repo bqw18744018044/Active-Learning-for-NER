@@ -1,4 +1,4 @@
 import enum
 
-# 主动学习样本选择策略
+# query strategy in active learning
 STRATEGY = enum.Enum('STRATEGY', ('RAND', 'LC', 'MNLP', 'TTE', 'TE'))

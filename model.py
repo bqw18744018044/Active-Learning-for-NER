@@ -6,7 +6,7 @@ from tf_metrics import precision, recall, f1
 
 class Model(object):
     def __init__(self, config, network):
-        self.config = config
+        self.config = config  # ModelConfig
         self.network = network
         self.estimator = self._build_estimator()
 
@@ -15,8 +15,6 @@ class Model(object):
         return tf.estimator.Estimator(self._model_fn, self.config.model_dir, cfg, self.config)
 
     def _model_fn(self, features, labels, mode, params):
-        # 在estimator中，由dataset产生的数据是一个包含两个元素的元组，
-        # 其中第一个元素指定为features，第二个元素指定为labels
         net = self.network(features, labels, mode, params)
         if mode == tf.estimator.ModeKeys.PREDICT:
             predictions = {'probs': net.probs,
@@ -29,10 +27,9 @@ class Model(object):
         else:
             metrics = {
                 'acc': tf.metrics.accuracy(net.tags, net.pred_ids, net.weights),
-                # [0,1,2,3,4,5]对应'B-LOC', 'I-LOC', 'B-PER', 'I-PER', 'B-ORG', 'I-ORG'
-                'precision': precision(net.tags, net.pred_ids, net.num_tags, [0, 1, 2, 3, 4, 5], net.weights),
-                'recall': recall(net.tags, net.pred_ids, net.num_tags, [0, 1, 2, 3, 4, 5], net.weights),
-                'f1': f1(net.tags, net.pred_ids, net.num_tags, [0, 1, 2, 3, 4, 5], net.weights),
+                'precision': precision(net.tags, net.pred_ids, net.num_tags, self.config.positive_ids, net.weights),
+                'recall': recall(net.tags, net.pred_ids, net.num_tags, self.config.positive_ids, net.weights),
+                'f1': f1(net.tags, net.pred_ids, net.num_tags, self.config.positive_ids, net.weights),
             }
             for metric_name, op in metrics.items():
                 tf.summary.scalar(metric_name, op[1])
